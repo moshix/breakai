@@ -7,9 +7,6 @@
     <style>
         canvas { border: 1px solid white; background: black; }
         body { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #111; }
-        #controls { margin-top: 10px; }
-        button { padding: 8px 16px; background: #333; color: white; border: 1px solid white; cursor: pointer; }
-        button:hover { background: #444; }
         #legend { 
             color: white; 
             margin-top: 10px; 
@@ -37,18 +34,23 @@
             font-family: Arial;
             font-size: 12px;
         }
+        #mode-indicator { 
+            color: white;
+            margin-top: 5px;
+            font-family: Arial;
+            text-align: center;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
     <div id="copyright">&copy; hot dog studios</div>
     <div id="fps">FPS: 0</div>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <div id="controls">
-        <button id="modeToggle">Switch to Manual Mode</button>
-    </div>
     <div id="legend">
         Controls: <span>← → Arrow keys to move</span> <span>S to toggle Auto/Manual</span> <span>P to pause</span> <span>R to restart game</span>
     </div>
+    <div id="mode-indicator">AI Mode</div>
     <script>
         // (c) by hot dog studios and moshix
         // a breakout implementation with AI gameplay
@@ -59,6 +61,8 @@
         // 0.05 Pause 
         // 0.06 multi-balls in higher levels!
         // 0.07 added secret key for debugging
+        // 0.08 removed switch button 
+        // 0.09 add mode indicator
            
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
@@ -98,7 +102,6 @@
         let autoMode = true;
         let leftPressed = false;
         let rightPressed = false;
-        const modeToggle = document.getElementById('modeToggle');
         let level = 1;
         let balls = [{
             x: canvas.width / 2,
@@ -128,7 +131,7 @@
             if (e.key === 'ArrowRight') rightPressed = true;
             if (e.key.toLowerCase() === 's') {
                 autoMode = !autoMode;
-                modeToggle.textContent = autoMode ? 'Switch to Manual Mode' : 'Switch to Auto Mode';
+                document.getElementById('mode-indicator').textContent = autoMode ? 'AI Mode' : 'Manual Mode';
             }
             if (e.key.toLowerCase() === 'r') {
                 restartGame();
@@ -145,12 +148,6 @@
         document.addEventListener('keyup', (e) => {
             if (e.key === 'ArrowLeft') leftPressed = false;
             if (e.key === 'ArrowRight') rightPressed = false;
-        });
-
-        // Add mode toggle functionality
-        modeToggle.addEventListener('click', () => {
-            autoMode = !autoMode;
-            modeToggle.textContent = autoMode ? 'Switch to Manual Mode' : 'Switch to Auto Mode';
         });
 
         // Function to find nearest active brick's X center
@@ -367,7 +364,7 @@
             }
 
             // Draw paddle
-            ctx.fillStyle = '#00FFFF'; // Cyan
+            ctx.fillStyle = 'cyan'; // Cyan
             ctx.fillRect(paddleX, canvas.height - PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT);
 
             // Draw bricks
