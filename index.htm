@@ -50,7 +50,7 @@
 </head>
 <body>
     <div id="copyright">&copy; hot dog studios</div>
-    <div id="fps">FPS: 0</div>
+    <div id="fps">FPS: 0<br>Version: v0.40</div>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
     <div id="legend">
         Controls: <span>← → Arrow keys to move</span> <span>S to toggle Auto/Manual</span> <span>P to pause</span> <span>R to restart game</span>
@@ -76,7 +76,7 @@
         // 0.20 sound!
         // 0.30 time based animation 
         // 0.40 fix various AI bugs, center bricks 
-                               
+        const version = "v0.40"                  
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
@@ -239,7 +239,7 @@
             const elapsedTime = currentTime - lastTime;
             if (elapsedTime >= 1000) {
                 fps = Math.round((frameCount * 1000) / elapsedTime);
-                document.getElementById('fps').textContent = `FPS: ${fps}`;
+                document.getElementById('fps').innerHTML = `FPS: ${fps}<br>Version: ${version}`;
                 frameCount = 0;
                 lastTime = currentTime;
             }
