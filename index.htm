@@ -41,6 +41,11 @@
             text-align: center;
             font-size: 14px;
         }
+        #hit-counter {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+        }
     </style>
 </head>
 <body>
@@ -51,6 +56,9 @@
         Controls: <span>← → Arrow keys to move</span> <span>S to toggle Auto/Manual</span> <span>P to pause</span> <span>R to restart game</span>
     </div>
     <div id="mode-indicator">AI Mode</div>
+    <div id="hit-counter">
+        <a href="https://hits.seeyoufarm.com"><img src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fmoshix.github.io%2Fbreakai%2F&count_bg=%2379C83D&title_bg=%23555555&icon=eslgaming.svg&icon_color=%23E7E7E7&title=hits&edge_flat=false"/></a>
+    </div>
     <script>
         // (c) by hot dog studios and moshix
         // a breakout implementation with AI gameplay
@@ -64,7 +72,8 @@
         // 0.08 removed switch button 
         // 0.09 add mode indicator
         // 0.10 added favicon 
-                       
+        // 0.11 fixed some bugs regarding lives
+                               
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
@@ -113,6 +122,9 @@
 
         // Add pause state variable with other game state variables
         let paused = false;
+
+        // Add this variable with other game state variables
+        let ballResetTimeout = null;
 
         // Initialize bricks
         for (let row = 0; row < BRICK_ROWS; row++) {
@@ -217,7 +229,8 @@
                 ctx.font = '40px Arial';
                 ctx.fillText(lives <= 0 ? 'Game Over' : 'You Win!', canvas.width / 2 - 100, canvas.height / 2);
                 ctx.fillText(`Score: ${score}`, canvas.width / 2 - 70, canvas.height / 2 + 50);
-                ctx.fillText(`Level: ${level}`, canvas.width / 2 - 70, canvas.height / 2 + 100);  // Show final level
+                ctx.fillText(`Level: ${level}`, canvas.width / 2 - 70, canvas.height / 2 + 100);
+                requestAnimationFrame(gameLoop);  // Keep the game loop running to process input
                 return;
             }
 
@@ -277,23 +290,57 @@
                 if (ball.x + BALL_RADIUS > canvas.width || ball.x - BALL_RADIUS < 0) ball.dx = -ball.dx;
                 if (ball.y - BALL_RADIUS < 0) ball.dy = -ball.dy;
                 if (ball.y + BALL_RADIUS > canvas.height) {
-                    if (autoMode || balls.length === 1) {
+                    if (autoMode) {
+                        // Auto mode: lose a life and reset ball
                         lives--;
-                        ball.x = canvas.width / 2;
-                        ball.y = canvas.height - 50;
-                        ball.dx = 4;
-                        ball.dy = -4;
-                        paddleX = canvas.width / 2 - PADDLE_WIDTH / 2;
+                        if (lives > 0) {
+                            // Clear any existing timeout
+                            if (ballResetTimeout) clearTimeout(ballResetTimeout);
+                            
+                            // Reset ball after 500ms delay
+                            ballResetTimeout = setTimeout(() => {
+                                ball.x = canvas.width / 2;
+                                ball.y = canvas.height - 50;
+                                ball.dx = 4;
+                                ball.dy = -4;
+                                paddleX = canvas.width / 2 - PADDLE_WIDTH / 2;
+                                ballResetTimeout = null;
+                            }, 500);
+                        }
                     } else {
-                        // Remove the ball in multi-ball mode
+                        // Manual mode: remove this ball
                         balls.splice(i, 1);
                         continue;
                     }
                 } else {
                     allBallsLost = false;
                 }
+            }
 
-                // Ball collision with paddle
+            // Check if all balls are lost in manual mode
+            if (balls.length === 0 && !autoMode && !ballResetTimeout) {  // Only check if no reset is pending
+                lives--;
+                if (lives > 0) {
+                    // Clear any existing timeout
+                    if (ballResetTimeout) clearTimeout(ballResetTimeout);
+                    
+                    // Reset with one ball after 500ms delay
+                    ballResetTimeout = setTimeout(() => {
+                        balls = [{
+                            x: canvas.width / 2,
+                            y: canvas.height - 50,
+                            dx: 4,
+                            dy: -4
+                        }];
+                        paddleX = canvas.width / 2 - PADDLE_WIDTH / 2;
+                        ballResetTimeout = null;
+                    }, 500);
+                }
+            }
+
+            // Ball collision with paddle
+            for (let i = balls.length - 1; i >= 0; i--) {
+                const ball = balls[i];
                 if (ball.y + BALL_RADIUS > canvas.height - PADDLE_HEIGHT &&
                     ball.x > paddleX && ball.x < paddleX + PADDLE_WIDTH) {
                     if (autoMode) {
@@ -323,19 +370,6 @@
                 ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
                 ctx.fillStyle = '#FFFFFF';
                 ctx.fill();
-            }
-
-            if (allBallsLost && !autoMode) {
-                lives--;
-                if (lives > 0) {
-                    // Reset all balls
-                    balls = [{
-                        x: canvas.width / 2,
-                        y: canvas.height - 50,
-                        dx: 4,
-                        dy: -4
-                    }];
-                }
             }
 
             // Ball collision with bricks
@@ -391,8 +425,10 @@
                 startNextLevel();
             }
 
-            if (lives <= 0) {
+            // Only check for game over if no ball reset is pending
+            if (lives <= 0 && !ballResetTimeout) {
                 gameOver = true;
+                lives = 0;  // Prevent negative lives
                 level = 1;  // Reset level when game is over
             }
             requestAnimationFrame(gameLoop);
