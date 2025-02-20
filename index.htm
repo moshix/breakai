@@ -74,6 +74,7 @@
         // 0.10 added favicon 
         // 0.11 fixed some bugs regarding lives
         // 0.20 sound!
+        // 0.30 time based animation 
                                
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
@@ -130,6 +131,11 @@
 
         // Add this variable with other game state variables
         let ballResetTimeout = null;
+
+        // Add these variables with other game state variables
+        let lastFrameTime = performance.now();
+        const DESIRED_FPS = 60;  // Target frame rate
+        const TIME_STEP = 1000 / DESIRED_FPS;  // Time step in milliseconds
 
         // Initialize bricks
         for (let row = 0; row < BRICK_ROWS; row++) {
@@ -217,11 +223,14 @@
 
         // Game loop
         function gameLoop() {
-            // Calculate FPS even when paused
-            frameCount++;
+            // Calculate time delta
             const currentTime = performance.now();
-            const elapsedTime = currentTime - lastTime;
+            const deltaTime = currentTime - lastFrameTime;
+            lastFrameTime = currentTime;
             
+            // Calculate FPS
+            frameCount++;
+            const elapsedTime = currentTime - lastTime;
             if (elapsedTime >= 1000) {
                 fps = Math.round((frameCount * 1000) / elapsedTime);
                 document.getElementById('fps').textContent = `FPS: ${fps}`;
@@ -261,35 +270,14 @@
             // Clear canvas
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Update paddle position based on mode
-            if (autoMode) {
-                // Use first ball for auto mode
-                const ballLandingX = predictBallLanding(balls[0]);
-                const nearestBrickX = getNearestBrickX();
-                const targetX = (ballLandingX * 0.5 + nearestBrickX * 0.5) - PADDLE_WIDTH / 2;
-                if (paddleX < targetX && paddleX < canvas.width - PADDLE_WIDTH) {
-                    paddleX += Math.min(PADDLE_SPEED, targetX - paddleX);
-                } else if (paddleX > targetX && paddleX > 0) {
-                    paddleX -= Math.min(PADDLE_SPEED, paddleX - targetX);
-                }
-            } else {
-                // Manual paddle control with faster speed
-                if (leftPressed && paddleX > 0) {
-                    paddleX -= MANUAL_PADDLE_SPEED;
-                }
-                if (rightPressed && paddleX < canvas.width - PADDLE_WIDTH) {
-                    paddleX += MANUAL_PADDLE_SPEED;
-                }
-            }
-
-            // Update and check all balls
-            let allBallsLost = true;
+            // Update ball positions with time delta
             for (let i = balls.length - 1; i >= 0; i--) {
                 const ball = balls[i];
                 
-                // Update ball position
-                ball.x += ball.dx;
-                ball.y += ball.dy;
+                // Update ball position using deltaTime
+                const timeScale = deltaTime / TIME_STEP;
+                ball.x += ball.dx * timeScale;
+                ball.y += ball.dy * timeScale;
 
                 // Ball collision with walls
                 if (ball.x + BALL_RADIUS > canvas.width || ball.x - BALL_RADIUS < 0) ball.dx = -ball.dx;
@@ -405,6 +393,28 @@
                 }
             }
 
+            // Update paddle position with time delta
+            if (autoMode) {
+                const ballLandingX = predictBallLanding(balls[0]);
+                const nearestBrickX = getNearestBrickX();
+                const targetX = (ballLandingX * 0.5 + nearestBrickX * 0.5) - PADDLE_WIDTH / 2;
+                const timeScale = deltaTime / TIME_STEP;
+                if (paddleX < targetX && paddleX < canvas.width - PADDLE_WIDTH) {
+                    paddleX += Math.min(PADDLE_SPEED * timeScale, targetX - paddleX);
+                } else if (paddleX > targetX && paddleX > 0) {
+                    paddleX -= Math.min(PADDLE_SPEED * timeScale, paddleX - targetX);
+                }
+            } else {
+                // Manual paddle control with time-based movement
+                const timeScale = deltaTime / TIME_STEP;
+                if (leftPressed && paddleX > 0) {
+                    paddleX -= MANUAL_PADDLE_SPEED * timeScale;
+                }
+                if (rightPressed && paddleX < canvas.width - PADDLE_WIDTH) {
+                    paddleX += MANUAL_PADDLE_SPEED * timeScale;
+                }
+            }
+
             // Draw paddle
             ctx.fillStyle = 'cyan'; // Cyan
             ctx.fillRect(paddleX, canvas.height - PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT);
@@ -484,6 +494,8 @@
             }
         }
 
+        // Initialize lastFrameTime before starting the game loop
+        lastFrameTime = performance.now();
         gameLoop();
     </script>
 </body>
