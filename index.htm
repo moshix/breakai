@@ -22,7 +22,7 @@
             position: absolute;
             top: 10px;
             right: 10px;
-            color: #444;
+            color: #aaa;
             font-family: Arial;
             font-size: 12px;
         }
@@ -30,7 +30,7 @@
             position: absolute;
             top: 10px;
             left: 10px;
-            color: #444;
+            color: #aaa;
             font-family: Arial;
             font-size: 12px;
         }
@@ -378,6 +378,16 @@
                     }
                 }
             }
+
+            // Draw FPS counter
+            ctx.fillStyle = '#DDDDDD';  // Changed to match legend gray (#DDDDDD)
+            ctx.font = '12px Arial';
+            ctx.fillText(`FPS: ${fps}`, 10, 20);
+
+            // Draw copyright
+            ctx.fillStyle = '#DDDDDD';  // Changed to match legend gray (#DDDDDD)
+            ctx.font = '12px Arial';
+            ctx.fillText('© 2024 Your Name', 10, canvas.height - 10);
 
             // Update score display to include level
             ctx.fillStyle = 'white';
