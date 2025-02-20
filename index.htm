@@ -77,7 +77,8 @@
         // 0.30 time based animation 
         // 0.40 fix various AI bugs, center bricks 
         // 0.50 based on Yannai request A and D also work
-        const version = "0.50"                  
+        // 0.60 fix paddle control in AI mode 
+        const version = "0.60"                  
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
@@ -292,23 +293,24 @@
                 if (ball.y + BALL_RADIUS > canvas.height) {
                     if (autoMode) {
                         // Auto mode: lose a life and reset ball
-                        if (!ballResetTimeout) {  // Only decrement lives if no reset is pending
+                        if (!ballResetTimeout && lives > 0) {  // Only if no reset is pending and still has lives
                             lives--;
-                        }
-                        if (lives > 0) {  // Only reset if still has lives
-                            // Clear any existing timeout
-                            if (ballResetTimeout) clearTimeout(ballResetTimeout);
+                            // Immediately remove this ball
+                            balls.splice(i, 1);
                             
-                            // Reset ball after 500ms delay
+                            // Schedule new ball launch
                             ballResetTimeout = setTimeout(() => {
-                                ball.x = canvas.width / 2;
-                                ball.y = canvas.height - 50;
-                                ball.dx = 4;
-                                ball.dy = -4;
+                                balls.push({
+                                    x: canvas.width / 2,
+                                    y: canvas.height - 50,
+                                    dx: 4,
+                                    dy: -4
+                                });
                                 paddleX = canvas.width / 2 - PADDLE_WIDTH / 2;
                                 ballResetTimeout = null;
                             }, 500);
                         }
+                        continue;
                     } else {
                         // Manual mode: remove this ball
                         balls.splice(i, 1);
@@ -344,8 +346,12 @@
             for (let i = balls.length - 1; i >= 0; i--) {
                 const ball = balls[i];
                 if (ball.y + BALL_RADIUS > canvas.height - PADDLE_HEIGHT &&
+                    ball.y < canvas.height &&  // Add upper bound check
                     ball.x > paddleX && ball.x < paddleX + PADDLE_WIDTH) {
                     paddleHitSound.play();
+                    // Move ball above paddle immediately to prevent double-hit
+                    ball.y = canvas.height - PADDLE_HEIGHT - BALL_RADIUS;
+                    
                     if (autoMode) {
                         // Auto mode: Only accelerate if below max speed
                         const currentSpeed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy);
@@ -370,7 +376,45 @@
                     const baseDX = (autoMode ? 8 : 6) * (hitPos - 0.5);
                     const randomTweak = (Math.random() - 0.5) * (autoMode ? 2 : 1);
                     ball.dx = baseDX + randomTweak;
-                    if (Math.abs(ball.dx) < 1) ball.dx = (ball.dx >= 0 ? 1 : -1) * 1;
+                    // Ensure minimum horizontal movement
+                    if (Math.abs(ball.dx) < 2) ball.dx = (ball.dx >= 0 ? 2 : -2);
+                    // Ensure minimum vertical movement
+                    if (Math.abs(ball.dy) < 2) ball.dy = -2;
+                }
+
+                // Ball loss check - only if ball is completely below paddle
+                if (ball.y - BALL_RADIUS > canvas.height) {
+                    if (autoMode) {
+                        // Auto mode: lose a life and reset ball
+                        if (!ballResetTimeout && lives > 0) {  // Only if no reset is pending and still has lives
+                            lives--;
+                            // Immediately remove this ball
+                            balls.splice(i, 1);
+                            
+                            // Schedule new ball launch
+                            ballResetTimeout = setTimeout(() => {
+                                balls.push({
+                                    x: canvas.width / 2,
+                                    y: canvas.height - 50,
+                                    dx: 4,
+                                    dy: -4
+                                });
+                                paddleX = canvas.width / 2 - PADDLE_WIDTH / 2;
+                                ballResetTimeout = null;
+                            }, 500);
+                        }
+                        continue;
+                    } else {
+                        // Manual mode: remove this ball
+                        balls.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                // Safety check - if ball somehow gets stuck or stops moving
+                if (Math.abs(ball.dx) < 0.1 && Math.abs(ball.dy) < 0.1) {
+                    ball.dx = 4 * (Math.random() > 0.5 ? 1 : -1);
+                    ball.dy = -4;
                 }
 
                 // Draw ball
@@ -409,14 +453,28 @@
 
             // Update paddle position with time delta
             if (autoMode) {
-                const ballLandingX = predictBallLanding(balls[0]);
-                const nearestBrickX = getNearestBrickX();
-                const targetX = (ballLandingX * 0.5 + nearestBrickX * 0.5) - PADDLE_WIDTH / 2;
-                const timeScale = deltaTime / TIME_STEP;
-                if (paddleX < targetX && paddleX < canvas.width - PADDLE_WIDTH) {
-                    paddleX += Math.min(PADDLE_SPEED * timeScale, targetX - paddleX);
-                } else if (paddleX > targetX && paddleX > 0) {
-                    paddleX -= Math.min(PADDLE_SPEED * timeScale, paddleX - targetX);
+                // Only predict if there are balls in play
+                if (balls.length > 0) {
+                    const ballLandingX = predictBallLanding(balls[0]);
+                    const nearestBrickX = getNearestBrickX();
+                    const targetX = (ballLandingX * 0.5 + nearestBrickX * 0.5) - PADDLE_WIDTH / 2;
+                    const timeScale = deltaTime / TIME_STEP;
+                    if (paddleX < targetX && paddleX < canvas.width - PADDLE_WIDTH) {
+                        paddleX += Math.min(PADDLE_SPEED * timeScale, targetX - paddleX);
+                    } else if (paddleX > targetX && paddleX > 0) {
+                        paddleX -= Math.min(PADDLE_SPEED * timeScale, paddleX - targetX);
+                    }
+                } else {
+                    // Center paddle while waiting for new ball
+                    const centerX = canvas.width / 2 - PADDLE_WIDTH / 2;
+                    const timeScale = deltaTime / TIME_STEP;
+                    if (Math.abs(paddleX - centerX) > 1) {
+                        if (paddleX < centerX) {
+                            paddleX += PADDLE_SPEED * timeScale;
+                        } else {
+                            paddleX -= PADDLE_SPEED * timeScale;
+                        }
+                    }
                 }
             } else {
                 // Manual paddle control with time-based movement
