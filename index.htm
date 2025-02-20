@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Breakout Clone (Auto, Aiming)</title>
+    <style>
+        canvas { border: 1px solid white; background: black; }
+        body { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #111; }
+        #controls { margin-top: 10px; }
+        button { padding: 8px 16px; background: #333; color: white; border: 1px solid white; cursor: pointer; }
+        button:hover { background: #444; }
+        #legend { 
+            color: white; 
+            margin-top: 10px; 
+            font-family: Arial; 
+            text-align: center; 
+            font-size: 14px; 
+        }
+        #legend span { 
+            margin: 0 10px; 
+            color: #aaa; 
+        }
+        #copyright {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: #444;
+            font-family: Arial;
+            font-size: 12px;
+        }
+        #fps {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #444;
+            font-family: Arial;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="copyright">&copy; hot dog studios</div>
+    <div id="fps">FPS: 0</div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="controls">
+        <button id="modeToggle">Switch to Manual Mode</button>
+    </div>
+    <div id="legend">
+        Controls: <span>← → Arrow keys to move</span> <span>S to toggle Auto/Manual</span> <span>P to pause</span> <span>R to restart game</span>
+    </div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game constants
+        const PADDLE_WIDTH = 100;
+        const PADDLE_HEIGHT = 10;
+        const BALL_RADIUS = 8;
+        const BRICK_ROWS = 5;
+        const BRICK_COLS = 10;
+        const BRICK_WIDTH = 75;
+        const BRICK_HEIGHT = 20;
+        const BRICK_GAP = 5;
+        const PADDLE_SPEED = 6;
+        const MAX_BALL_SPEED = 15;  // Maximum allowed ball speed before ending auto mode game
+        const MANUAL_MAX_BALL_SPEED = 8;  // Maximum ball speed in manual mode
+        const MANUAL_PADDLE_SPEED = 12;  // Faster paddle speed for manual mode
+
+        // Game state
+        let frameCount = 0;
+        let lastTime = performance.now();
+        let fps = 0;
+        let paddleX = canvas.width / 2 - PADDLE_WIDTH / 2;
+        let ballX = canvas.width / 2;
+        let ballY = canvas.height - 50;
+        let ballDX = 4; // Initial ball speed X
+        let ballDY = -4; // Initial ball speed Y
+        let bricks = [];
+        let score = 0;
+        let lives = 3;
+        let gameOver = false;
+
+        // Colors for bricks (one per row)
+        const BRICK_COLORS = ['#FF4136', '#FF851B', '#FFDC00', '#2ECC40', '#0074D9']; // Red, Orange, Yellow, Green, Blue
+
+        // Add new game state variables
+        let autoMode = true;
+        let leftPressed = false;
+        let rightPressed = false;
+        const modeToggle = document.getElementById('modeToggle');
+        let level = 1;
+        let balls = [{
+            x: canvas.width / 2,
+            y: canvas.height - 50,
+            dx: 4,
+            dy: -4
+        }];
+
+        // Add pause state variable with other game state variables
+        let paused = false;
+
+        // Initialize bricks
+        for (let row = 0; row < BRICK_ROWS; row++) {
+            bricks[row] = [];
+            for (let col = 0; col < BRICK_COLS; col++) {
+                bricks[row][col] = {
+                    x: col * (BRICK_WIDTH + BRICK_GAP) + BRICK_GAP,
+                    y: row * (BRICK_HEIGHT + BRICK_GAP) + 50,
+                    active: true
+                };
+            }
+        }
+
+        // Add event listeners for manual control
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') leftPressed = true;
+            if (e.key === 'ArrowRight') rightPressed = true;
+            if (e.key.toLowerCase() === 's') {
+                autoMode = !autoMode;
+                modeToggle.textContent = autoMode ? 'Switch to Manual Mode' : 'Switch to Auto Mode';
+            }
+            if (e.key.toLowerCase() === 'r') {
+                restartGame();
+            }
+            if (e.key === 'F11') {
+                e.preventDefault();
+                startNextLevel();
+            }
+            if (e.key.toLowerCase() === 'p') {
+                paused = !paused;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft') leftPressed = false;
+            if (e.key === 'ArrowRight') rightPressed = false;
+        });
+
+        // Add mode toggle functionality
+        modeToggle.addEventListener('click', () => {
+            autoMode = !autoMode;
+            modeToggle.textContent = autoMode ? 'Switch to Manual Mode' : 'Switch to Auto Mode';
+        });
+
+        // Function to find nearest active brick's X center
+        function getNearestBrickX() {
+            let minDist = Infinity;
+            let nearestX = canvas.width / 2; // Default to center if no bricks
+            const ball = balls[0]; // Use the first ball for AI
+            
+            for (let row = 0; row < BRICK_ROWS; row++) {
+                for (let col = 0; col < BRICK_COLS; col++) {
+                    const brick = bricks[row][col];
+                    if (brick.active) {
+                        const brickCenterX = brick.x + BRICK_WIDTH / 2;
+                        const dist = Math.abs(ball.x - brickCenterX);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            nearestX = brickCenterX;
+                        }
+                    }
+                }
+            }
+            return nearestX;
+        }
+
+        // Predict ball landing X-position
+        function predictBallLanding(ball) {
+            let x = ball.x;
+            let y = ball.y;
+            let dx = ball.dx;
+            let dy = ball.dy;
+
+            while (y < canvas.height - PADDLE_HEIGHT) {
+                x += dx;
+                y += dy;
+                if (x + BALL_RADIUS > canvas.width) {
+                    x = canvas.width - BALL_RADIUS;
+                    dx = -dx;
+                } else if (x - BALL_RADIUS < 0) {
+                    x = BALL_RADIUS;
+                    dx = -dx;
+                }
+                if (y - BALL_RADIUS < 0) {
+                    y = BALL_RADIUS;
+                    dy = -dy;
+                }
+            }
+            return x;
+        }
+
+        // Game loop
+        function gameLoop() {
+            // Calculate FPS even when paused
+            frameCount++;
+            const currentTime = performance.now();
+            const elapsedTime = currentTime - lastTime;
+            
+            if (elapsedTime >= 1000) {
+                fps = Math.round((frameCount * 1000) / elapsedTime);
+                document.getElementById('fps').textContent = `FPS: ${fps}`;
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+
+            if (gameOver) {
+                ctx.fillStyle = 'white';
+                ctx.font = '40px Arial';
+                ctx.fillText(lives <= 0 ? 'Game Over' : 'You Win!', canvas.width / 2 - 100, canvas.height / 2);
+                ctx.fillText(`Score: ${score}`, canvas.width / 2 - 70, canvas.height / 2 + 50);
+                ctx.fillText(`Level: ${level}`, canvas.width / 2 - 70, canvas.height / 2 + 100);  // Show final level
+                return;
+            }
+
+            // Show pause message and stop game updates when paused
+            if (paused) {
+                ctx.fillStyle = 'white';
+                ctx.font = '40px Arial';
+                ctx.fillText('PAUSED', canvas.width / 2 - 70, canvas.height / 2);
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+
+            // Check for max speed in auto mode
+            if (autoMode && (Math.abs(balls[0].dx) > MAX_BALL_SPEED || Math.abs(balls[0].dy) > MAX_BALL_SPEED)) {
+                gameOver = true;
+                ctx.fillStyle = 'white';
+                ctx.font = '40px Arial';
+                ctx.fillText('Maximum Speed Reached!', canvas.width / 2 - 200, canvas.height / 2);
+                ctx.fillText(`Final Score: ${score}`, canvas.width / 2 - 100, canvas.height / 2 + 50);
+                return;
+            }
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Update paddle position based on mode
+            if (autoMode) {
+                // Use first ball for auto mode
+                const ballLandingX = predictBallLanding(balls[0]);
+                const nearestBrickX = getNearestBrickX();
+                const targetX = (ballLandingX * 0.5 + nearestBrickX * 0.5) - PADDLE_WIDTH / 2;
+                if (paddleX < targetX && paddleX < canvas.width - PADDLE_WIDTH) {
+                    paddleX += Math.min(PADDLE_SPEED, targetX - paddleX);
+                } else if (paddleX > targetX && paddleX > 0) {
+                    paddleX -= Math.min(PADDLE_SPEED, paddleX - targetX);
+                }
+            } else {
+                // Manual paddle control with faster speed
+                if (leftPressed && paddleX > 0) {
+                    paddleX -= MANUAL_PADDLE_SPEED;
+                }
+                if (rightPressed && paddleX < canvas.width - PADDLE_WIDTH) {
+                    paddleX += MANUAL_PADDLE_SPEED;
+                }
+            }
+
+            // Update and check all balls
+            let allBallsLost = true;
+            for (let i = balls.length - 1; i >= 0; i--) {
+                const ball = balls[i];
+                
+                // Update ball position
+                ball.x += ball.dx;
+                ball.y += ball.dy;
+
+                // Ball collision with walls
+                if (ball.x + BALL_RADIUS > canvas.width || ball.x - BALL_RADIUS < 0) ball.dx = -ball.dx;
+                if (ball.y - BALL_RADIUS < 0) ball.dy = -ball.dy;
+                if (ball.y + BALL_RADIUS > canvas.height) {
+                    if (autoMode || balls.length === 1) {
+                        lives--;
+                        ball.x = canvas.width / 2;
+                        ball.y = canvas.height - 50;
+                        ball.dx = 4;
+                        ball.dy = -4;
+                        paddleX = canvas.width / 2 - PADDLE_WIDTH / 2;
+                    } else {
+                        // Remove the ball in multi-ball mode
+                        balls.splice(i, 1);
+                        continue;
+                    }
+                } else {
+                    allBallsLost = false;
+                }
+
+                // Ball collision with paddle
+                if (ball.y + BALL_RADIUS > canvas.height - PADDLE_HEIGHT &&
+                    ball.x > paddleX && ball.x < paddleX + PADDLE_WIDTH) {
+                    if (autoMode) {
+                        // Auto mode: Keep accelerating
+                        ball.dy = -ball.dy * 1.1;
+                        ball.dx *= 1.1;
+                    } else {
+                        // Manual mode: Only accelerate if below speed limit
+                        const currentSpeed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy);
+                        if (currentSpeed < MANUAL_MAX_BALL_SPEED) {
+                            ball.dy = -ball.dy * 1.03;
+                            ball.dx *= 1.03;
+                        } else {
+                            ball.dy = -ball.dy;  // Just reverse direction without acceleration
+                        }
+                    }
+                    
+                    const hitPos = (ball.x - paddleX) / PADDLE_WIDTH;
+                    const baseDX = (autoMode ? 8 : 6) * (hitPos - 0.5);
+                    const randomTweak = (Math.random() - 0.5) * (autoMode ? 2 : 1);
+                    ball.dx = baseDX + randomTweak;
+                    if (Math.abs(ball.dx) < 1) ball.dx = (ball.dx >= 0 ? 1 : -1) * 1;
+                }
+
+                // Draw ball
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fill();
+            }
+
+            if (allBallsLost && !autoMode) {
+                lives--;
+                if (lives > 0) {
+                    // Reset all balls
+                    balls = [{
+                        x: canvas.width / 2,
+                        y: canvas.height - 50,
+                        dx: 4,
+                        dy: -4
+                    }];
+                }
+            }
+
+            // Ball collision with bricks
+            for (let row = 0; row < BRICK_ROWS; row++) {
+                for (let col = 0; col < BRICK_COLS; col++) {
+                    const brick = bricks[row][col];
+                    if (brick.active) {
+                        const brickX = brick.x;
+                        const brickY = brick.y;
+                        let brickHit = false;
+                        for (let i = balls.length - 1; i >= 0; i--) {
+                            const ball = balls[i];
+                            if (
+                                ball.x > brickX && ball.x < brickX + BRICK_WIDTH &&
+                                ball.y > brickY && ball.y < brickY + BRICK_HEIGHT
+                            ) {
+                                brick.active = false;
+                                ball.dy = -ball.dy;
+                                brickHit = true;
+                            }
+                        }
+                        if (brickHit) {
+                            score += 10;  // Only increment score once per brick
+                        }
+                    }
+                }
+            }
+
+            // Draw paddle
+            ctx.fillStyle = '#00FFFF'; // Cyan
+            ctx.fillRect(paddleX, canvas.height - PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT);
+
+            // Draw bricks
+            for (let row = 0; row < BRICK_ROWS; row++) {
+                for (let col = 0; col < BRICK_COLS; col++) {
+                    const brick = bricks[row][col];
+                    if (brick.active) {
+                        ctx.fillStyle = BRICK_COLORS[row];
+                        ctx.fillRect(brick.x, brick.y, BRICK_WIDTH, BRICK_HEIGHT);
+                    }
+                }
+            }
+
+            // Update score display to include level
+            ctx.fillStyle = 'white';
+            ctx.font = '20px Arial';
+            ctx.fillText(`Score: ${score}`, 10, 30);
+            ctx.fillText(`Lives: ${lives}`, canvas.width - 100, 30);
+            ctx.fillText(`Level: ${level}`, canvas.width / 2 - 30, 30);
+
+            // Check win condition and start next level
+            if (score === BRICK_ROWS * BRICK_COLS * 10) {
+                startNextLevel();
+            }
+
+            if (lives <= 0) {
+                gameOver = true;
+                level = 1;  // Reset level when game is over
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Add restart game function
+        function restartGame() {
+            // Reset game state
+            paddleX = canvas.width / 2 - PADDLE_WIDTH / 2;
+            level = 1;  // Make sure level is reset to 1
+            balls = [{
+                x: canvas.width / 2,
+                y: canvas.height - 50,
+                dx: 4,
+                dy: -4
+            }];
+            score = 0;
+            lives = 3;
+            gameOver = false;
+
+            // Reset bricks
+            for (let row = 0; row < BRICK_ROWS; row++) {
+                for (let col = 0; col < BRICK_COLS; col++) {
+                    bricks[row][col].active = true;
+                }
+            }
+        }
+
+        // Add function to start next level
+        function startNextLevel() {
+            level++;
+            // Only add ball in manual mode
+            if (!autoMode) {
+                balls.push({
+                    x: canvas.width / 2,
+                    y: canvas.height - 50,
+                    dx: 4 * (Math.random() > 0.5 ? 1 : -1), // Random initial direction
+                    dy: -4
+                });
+            }
+            // Reset bricks
+            for (let row = 0; row < BRICK_ROWS; row++) {
+                for (let col = 0; col < BRICK_COLS; col++) {
+                    bricks[row][col].active = true;
+                }
+            }
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
